@@ -1,54 +1,46 @@
-import matplotlib.pyplot as plt
 import pandas as pd
+import matplotlib.pyplot as plt
 
-# Carga los datos de velocidad de internet y los datos meteorológicos
-speedtest_df = pd.read_csv('speedtest_data.csv')
-meteo_df = pd.read_csv('meteo_data.csv')
+# Cargando los datos de los archivos CSV
+speedtest_data = pd.read_csv('speedtest_data.csv', parse_dates=['Timestamp'])
+meteo_data = pd.read_csv('meteo_data.csv', parse_dates=['date'])
 
-# Convierte las columnas de tiempo a datetime
-speedtest_df['Timestamp'] = pd.to_datetime(speedtest_df['Timestamp'])
-meteo_df['date'] = pd.to_datetime(meteo_df['date'])
+# Limpiando y preparando los datos
+# Asegurando que los timestamps están en formato de fecha y hora correctos
+speedtest_data['Timestamp'] = pd.to_datetime(speedtest_data['Timestamp'])
+meteo_data['date'] = pd.to_datetime(meteo_data['date'])
 
-# Asegúrate de que los datos estén alineados temporalmente
-meteo_df = meteo_df.set_index('date').resample('h').asfreq().reset_index()
-speedtest_df = speedtest_df.set_index('Timestamp').resample('H').asfreq().reset_index()
+# Resample de los datos meteorológicos para que coincidan con los tiempos de speedtest
+meteo_data.set_index('date', inplace=True)
+meteo_resampled = meteo_data.resample('15T').interpolate(method='time')  # interpolación cada 15 minutos
 
-# Calcula el promedio móvil del Throughput para suavizar las variaciones de corto plazo
-speedtest_df['Throughput Moving Average'] = speedtest_df['Download Throughput'].rolling(window=24).mean()
+# Uniendo los datos mediante el índice de tiempo más cercano
+combined_data = pd.merge_asof(speedtest_data.sort_values('Timestamp'),
+                              meteo_resampled.reset_index().sort_values('date'),
+                              left_on='Timestamp',
+                              right_on='date',
+                              direction='nearest')
 
-# Prepara un gráfico combinado usando dos ejes Y
-fig, ax1 = plt.subplots(figsize=(15, 7))
+# Visualizando las correlaciones
+plt.figure(figsize=(14, 7))
+plt.subplot(1, 2, 1)
+plt.scatter(combined_data['cloud_cover'], combined_data['Download Throughput'], alpha=0.5)
+plt.title('Cloud Cover vs. Download Throughput')
+plt.xlabel('Cloud Cover (%)')
+plt.ylabel('Download Throughput (Gbps)')
 
-# Configura el eje Y primario para Throughput
-color = 'tab:red'
-ax1.set_xlabel('Time')
-ax1.set_ylabel('Throughput (Mbps)', color=color)
-ax1.plot(speedtest_df['Timestamp'], speedtest_df['Throughput Moving Average'], color=color, label='Throughput')
-ax1.tick_params(axis='y', labelcolor=color)
+plt.subplot(1, 2, 2)
+plt.scatter(combined_data['rain'], combined_data['Download Throughput'], alpha=0.5)
+plt.title('Rain vs. Download Throughput')
+plt.xlabel('Rain (mm)')
+plt.ylabel('Download Throughput (Gbps)')
 
-# Crea un eje Y secundario compartiendo el mismo eje X para los datos meteorológicos
-ax2 = ax1.twinx()
-
-# Configura el eje secundario para precipitación
-color = 'tab:blue'
-ax2.set_ylabel('Precipitation (mm)', color=color)
-ax2.bar(meteo_df['date'], meteo_df['precipitation'], color=color, alpha=0.3, label='Precipitation')
-ax2.tick_params(axis='y', labelcolor=color)
-
-# Configura otro eje Y secundario para nubosidad
-ax3 = ax1.twinx()
-ax3.spines['right'].set_position(('outward', 60))  # Desplaza el eje de nubosidad a la derecha
-color = 'tab:gray'
-ax3.set_ylabel('Cloud Cover (%)', color=color)
-ax3.fill_between(meteo_df['date'], meteo_df['cloud_cover'], color=color, alpha=0.3, label='Cloud Cover')
-ax3.tick_params(axis='y', labelcolor=color)
-
-# Añade leyendas
-ax1.legend(loc='upper left')
-ax2.legend(loc='upper right')
-ax3.legend(loc='center right')
-
-# Añade títulos y muestra la gráfica
-plt.title('Internet Throughput, Precipitation, and Cloud Cover Over Time')
-fig.tight_layout()
+plt.tight_layout()
 plt.show()
+
+# Calculando coeficientes de correlación
+correlation_cloud_cover = combined_data['cloud_cover'].corr(combined_data['Download Throughput'])
+correlation_rain = combined_data['rain'].corr(combined_data['Download Throughput'])
+
+correlation_cloud_cover, correlation_rain
+
